@@ -1,0 +1,46 @@
+public sealed class DatabaseManager
+{
+    private static readonly Lazy<DatabaseManager> lazyInstance = new Lazy<DatabaseManager>(() => new DatabaseManager());
+    private readonly Queue<DatabaseCommand> commandQueue = new Queue<DatabaseCommand>();
+    private readonly Thread executorThread;
+    private readonly string connectionString = "Data Source=sample.db;Version=3;";
+
+    private DatabaseManager()
+    {
+        executorThread = new Thread(ExecuteCommands);
+        executorThread.Start();
+    }
+
+    public static DatabaseManager Instance => lazyInstance.Value;
+
+    public void EnqueueCommand(DatabaseCommand command)
+    {
+        lock (commandQueue)
+        {
+            commandQueue.Enqueue(command);
+            Monitor.Pulse(commandQueue);
+        }
+    }
+
+    private void ExecuteCommands()
+    {
+        while (true)
+        {
+            DatabaseCommand command = null;
+            lock (commandQueue)
+            {
+                while (commandQueue.Count == 0)
+                {
+                    Monitor.Wait(commandQueue);
+                }
+                command = commandQueue.Dequeue();
+            }
+
+            using (var connection = new SQLiteConnection(connectionString))
+            {
+                connection.Open();
+                command.Execute(connection);
+            }
+        }
+    }
+}
